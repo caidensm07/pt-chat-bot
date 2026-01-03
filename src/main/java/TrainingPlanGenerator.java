@@ -139,6 +139,13 @@ public class TrainingPlanGenerator {
 
         p.add("Step " + step + " of phase.");
         p.add("Rule: pain ≤ 3/10 and no next-day worsening.");
+
+        // Phase 1 follow-up guidance
+if (phase == RTSPhase.PHASE_1) {
+    p.add("Follow-up guidance: reassess symptoms before progressing beyond Phase 1.");
+    p.add("If symptoms are not clearly improving, remain in Phase 1 and adjust volume.");
+}
+        
         return p;
     }
 
