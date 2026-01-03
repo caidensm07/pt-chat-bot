@@ -6,381 +6,274 @@ import java.util.*;
 public class TrainingPlanGenerator {
 
     private static final String LOG_FILE = "pt_log.csv";
-    private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    // In-memory state (last check-in)
-    private static CheckIn lastCheckIn = null;
+    private static final String STATE_FILE = "rts_state.properties";
+    private static final DateTimeFormatter TS_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // =========================
-    // MAIN: chat command loop
+    // MAIN
     // =========================
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
+        RTSState state = RTSState.load(STATE_FILE);
 
-        System.out.println("=== PT Chat Bot (Java) ===");
-        System.out.println("Type 'help' to see commands.\n");
+        System.out.println("=== Return-to-Sport Readiness Bot ===");
+        System.out.println("Type 'assess' to run the Return-to-Sport Assessment.");
+        System.out.println("Type 'quit' to exit.\n");
 
         while (true) {
             System.out.print("you> ");
             String cmd = scanner.nextLine().trim().toLowerCase();
 
-            if (cmd.isEmpty()) continue;
+            if (cmd.equals("quit")) break;
 
-            switch (cmd) {
-                case "help":
-                case "?":
-                    printHelp();
-                    break;
+            if (cmd.equals("assess") || cmd.equals("checkin")) {
+                Assessment a = runAssessment(scanner, state);
 
-                case "checkin":
-                    lastCheckIn = runCheckIn(scanner);
-                    ensureLogHeaderExists(LOG_FILE);
-                    appendCheckInToCsv(LOG_FILE, lastCheckIn);
+                ensureLogHeaderExists(LOG_FILE);
+                appendAssessmentToCsv(LOG_FILE, a);
 
-                    String zone = triageZone(
-                            lastCheckIn.painAtRest,
-                            lastCheckIn.stiffness,
-                            lastCheckIn.sleepHours,
-                            lastCheckIn.swelling,
-                            lastCheckIn.instability,
-                            lastCheckIn.sharpPain,
-                            lastCheckIn.poppingWithPain,
-                            lastCheckIn.overallPain
-                    );
+                System.out.println("\nCurrent Phase: " + state.phase.label());
+                System.out.println("Current Step: " + state.step + "/3");
+                System.out.println("Decision: " + a.decision + "\n");
 
-                    System.out.println("\nPT Bot> Readiness Zone: " + zone);
-                    System.out.println("PT Bot> Today's plan:");
-                    for (String line : generateTrainingPlan(zone, lastCheckIn.strength, lastCheckIn.flexibility, lastCheckIn.fascia, lastCheckIn.cns)) {
-                        System.out.println("- " + line);
-                    }
-                    System.out.println("\nPT Bot> Saved to " + LOG_FILE + "\n");
-                    break;
+                System.out.println("Today's Plan:");
+                for (String line : generatePlan(state.phase, state.step, a.decision)) {
+                    System.out.println("- " + line);
+                }
 
-                case "plan":
-                    if (lastCheckIn == null) {
-                        System.out.println("PT Bot> No check-in yet. Type: checkin\n");
-                        break;
-                    }
-                    String z = triageZone(
-                            lastCheckIn.painAtRest,
-                            lastCheckIn.stiffness,
-                            lastCheckIn.sleepHours,
-                            lastCheckIn.swelling,
-                            lastCheckIn.instability,
-                            lastCheckIn.sharpPain,
-                            lastCheckIn.poppingWithPain,
-                            lastCheckIn.overallPain
-                    );
-                    System.out.println("PT Bot> Readiness Zone: " + z);
-                    System.out.println("PT Bot> Today's plan:");
-                    for (String line : generateTrainingPlan(z, lastCheckIn.strength, lastCheckIn.flexibility, lastCheckIn.fascia, lastCheckIn.cns)) {
-                        System.out.println("- " + line);
-                    }
-                    System.out.println();
-                    break;
+                applyDecision(state, a.decision);
+                state.save(STATE_FILE);
 
-                case "history":
-                    ensureLogHeaderExists(LOG_FILE);
-                    printLastNEntries(LOG_FILE, 5);
-                    System.out.println();
-                    break;
-
-                case "rehab":
-                    System.out.println("PT Bot> Type: rehab hamstring | rehab knee | rehab calf\n");
-                    break;
-
-                case "rehab hamstring":
-                    System.out.println(getRehabPlan(1));
-                    System.out.println();
-                    break;
-
-                case "rehab knee":
-                    System.out.println(getRehabPlan(2));
-                    System.out.println();
-                    break;
-
-                case "rehab calf":
-                    System.out.println(getRehabPlan(3));
-                    System.out.println();
-                    break;
-
-                case "quit":
-                case "exit":
-                    System.out.println("PT Bot> later.");
-                    scanner.close();
-                    return;
-
-                default:
-                    System.out.println("PT Bot> I didn't get that. Type 'help'.\n");
+                System.out.println("\nUpdated Phase: " + state.phase.label());
+                System.out.println("Updated Step: " + state.step + "/3\n");
+            } else {
+                System.out.println("Commands: assess | quit\n");
             }
         }
-    }
 
-    private static void printHelp() {
-        System.out.println("""
-Commands:
-  help            Show commands
-  checkin         Do a daily check-in (saves to pt_log.csv)
-  plan            Show plan for your most recent check-in
-  history         Show last 5 saved check-ins
-  rehab hamstring Show hamstring rehab plan
-  rehab knee      Show knee rehab plan
-  rehab calf      Show calf rehab plan
-  quit            Exit
-""");
+        scanner.close();
     }
 
     // =========================
-    // CHECK-IN FLOW
+    // ASSESSMENT
     // =========================
-    private static CheckIn runCheckIn(Scanner scanner) {
-        System.out.println("\nPT Bot check-in (quick + honest).");
+    private static Assessment runAssessment(Scanner sc, RTSState state) {
+        System.out.println("\n--- Return-to-Sport Readiness Assessment ---");
 
-        int painAtRest = askIntRange(scanner, "Pain at rest (0-10): ", 0, 10);
-        int stiffness = askIntRange(scanner, "Morning stiffness (0-10): ", 0, 10);
-        double sleepHours = askDouble(scanner, "Hours of sleep last night (e.g., 7.5): ");
+        int painRest = askInt(sc, "Pain at rest (0–10): ", 0, 10);
+        int painActivity = askInt(sc, "Pain during activity (0–10): ", 0, 10);
+        int stiffness = askInt(sc, "Morning stiffness (0–10): ", 0, 10);
+        double sleep = askDouble(sc, "Hours of sleep last night: ");
 
-        boolean swelling = askYesNo(scanner, "Any swelling? (yes/no): ");
-        boolean instability = askYesNo(scanner, "Any instability/giving way? (yes/no): ");
-        boolean sharpPain = askYesNo(scanner, "Any sharp pain? (yes/no): ");
-        boolean poppingWithPain = askYesNo(scanner, "Any popping WITH pain? (yes/no): ");
+        boolean swelling = askYesNo(sc, "Any swelling? ");
+        boolean sharpPain = askYesNo(sc, "Any sharp pain? ");
+        boolean instability = askYesNo(sc, "Any instability/giving way? ");
 
-        int overallPain = askIntRange(scanner, "Overall pain during activity (0-10): ", 0, 10);
+        LastResponse response = askLastResponse(sc);
+        boolean functionPass = askYesNo(sc, "Can you do a controlled single-leg squat to a chair? ");
+        int confidence = askInt(sc, "Confidence moving today (0–10): ", 0, 10);
 
-        int strength = askIntRange(scanner, "Strength (1-10): ", 1, 10);
-        int flexibility = askIntRange(scanner, "Flexibility (1-10): ", 1, 10);
-        int fascia = askIntRange(scanner, "Mobility/fascia readiness (1-10): ", 1, 10);
-        int cns = askIntRange(scanner, "CNS/energy (1-10): ", 1, 10);
+        String zone = triageZone(
+                painRest, stiffness, sleep,
+                swelling, instability, sharpPain, false,
+                painActivity
+        );
 
-        String notes = askString(scanner, "Notes (optional): ");
+        Decision decision = decide(zone, response, functionPass, confidence, painActivity);
 
-        return new CheckIn(
+        return new Assessment(
                 LocalDateTime.now().format(TS_FMT),
-                painAtRest, stiffness, sleepHours,
-                swelling, instability, sharpPain, poppingWithPain,
-                overallPain,
-                strength, flexibility, fascia, cns,
-                notes
+                zone, decision, state.phase, state.step
         );
     }
 
     // =========================
-    // TRIAGE LOGIC (TESTED)
+    // DECISION LOGIC
+    // =========================
+    private static Decision decide(
+            String zone,
+            LastResponse response,
+            boolean functionPass,
+            int confidence,
+            int painActivity
+    ) {
+        if (zone.equals("RED")) return Decision.REGRESS;
+        if (response == LastResponse.WORSE) return Decision.REGRESS;
+        if (!functionPass || painActivity >= 5 || confidence <= 3) return Decision.HOLD;
+        if (zone.equals("GREEN") && response == LastResponse.BETTER && confidence >= 6)
+            return Decision.PROGRESS;
+        return Decision.HOLD;
+    }
+
+    private static void applyDecision(RTSState state, Decision d) {
+        if (d == Decision.PROGRESS) {
+            if (state.step < 3) state.step++;
+            else if (state.phase != RTSPhase.PHASE_5) {
+                state.phase = RTSPhase.values()[state.phase.ordinal() + 1];
+                state.step = 1;
+            }
+        } else if (d == Decision.REGRESS) {
+            if (state.step > 1) state.step--;
+            else if (state.phase != RTSPhase.PHASE_1) {
+                state.phase = RTSPhase.values()[state.phase.ordinal() - 1];
+                state.step = 3;
+            }
+        }
+    }
+
+    // =========================
+    // PLANS
+    // =========================
+    private static List<String> generatePlan(RTSPhase phase, int step, Decision d) {
+        List<String> p = new ArrayList<>();
+        p.add("Warm-up: 10 minutes easy + mobility.");
+
+        switch (phase) {
+            case PHASE_1 -> p.add("Low-impact cardio + isometrics.");
+            case PHASE_2 -> p.add("Base strength + easy conditioning.");
+            case PHASE_3 -> p.add("Running & movement drills (controlled).");
+            case PHASE_4 -> p.add("High-intensity practice (controlled).");
+            case PHASE_5 -> p.add("Full return to sport.");
+        }
+
+        p.add("Step " + step + " of phase.");
+        p.add("Rule: pain ≤ 3/10 and no next-day worsening.");
+        return p;
+    }
+
+    // =========================
+    // TRIAGE (FOR TESTS)
     // =========================
     public static String triageZone(
             int painAtRest, int stiffness, double sleepHours,
             boolean swelling, boolean instability, boolean sharpPain, boolean poppingWithPain,
             int overallPain
     ) {
-        if (swelling || instability || sharpPain || poppingWithPain || painAtRest >= 6) return "RED";
-        if (overallPain >= 4 || stiffness >= 6 || sleepHours < 6.0) return "YELLOW";
+        if (swelling || instability || sharpPain || painAtRest >= 6) return "RED";
+        if (overallPain >= 4 || stiffness >= 6 || sleepHours < 6) return "YELLOW";
         return "GREEN";
     }
 
     // =========================
-    // TRAINING PLAN
-    // =========================
-    public static List<String> generateTrainingPlan(String zone, int strength, int flexibility, int fascia, int cns) {
-        List<String> plan = new ArrayList<>();
-
-        if ("RED".equals(zone)) {
-            plan.add("No sprinting or intense lower-body loading today.");
-            plan.add("Easy walk/bike 10–20 minutes if comfortable.");
-            plan.add("Isometrics (pain-calming): 3–5 sets of 30–45s.");
-            plan.add("Prioritize sleep, hydration, and easy mobility.");
-            return plan;
-        }
-
-        if ("YELLOW".equals(zone)) {
-            plan.add("Keep it light: technique + low intensity only.");
-            plan.add("Options: easy tempo, light sled drags, or bike 20–30 min.");
-            plan.add("Avoid max sprinting and hard decels today.");
-            plan.add("Strength work: moderate effort, clean reps.");
-            return plan;
-        }
-
-        // GREEN
-        plan.add("Train normally, but progress volume conservatively.");
-        plan.add("Warm up thoroughly and ramp intensity gradually.");
-        plan.add("If CNS ≥ 7, you can lift heavier (no grind reps).");
-        plan.add("Keep pain ≤ 3/10 and no next-day spike.");
-        return plan;
-    }
-
-    // =========================
-    // REHAB PLANS (TESTED)
+    // REHAB (FOR TESTS)
     // =========================
     public static String getRehabPlan(int injuryChoice) {
-        switch (injuryChoice) {
-            case 1:
-                return "=== Hamstring Rehab Plan ===\n"
-                        + "• Isometrics (bridge holds / curl holds)\n"
-                        + "• Progress to RDLs + controlled tempo\n"
-                        + "• Gradual return to sprinting with short reps\n";
-            case 2:
-                return "=== Knee Rehab Plan ===\n"
-                        + "• Quad isometrics (wall sit / leg extension iso)\n"
-                        + "• Step-downs + split squats (pain ≤ 3/10)\n"
-                        + "• Gradual return to running (no hard decels early)\n";
-            case 3:
-                return "=== Calf Rehab Plan ===\n"
-                        + "• Isometric calf holds\n"
-                        + "• Eccentric calf raises\n"
-                        + "• Gradual plyometric progression\n";
-            default:
-                return "Invalid injury choice.";
-        }
-    }
-
-    // =========================
-    // LOGGING (CSV)
-    // =========================
-    public static void ensureLogHeaderExists(String path) {
-        File f = new File(path);
-        if (f.exists() && f.length() > 0) return;
-
-        try (PrintWriter pw = new PrintWriter(new FileWriter(f, false))) {
-            pw.println("timestamp,painAtRest,stiffness,sleepHours,swelling,instability,sharpPain,poppingWithPain,overallPain,strength,flexibility,fascia,cns,notes");
-        } catch (IOException e) {
-            System.out.println("PT Bot> Could not write log header: " + e.getMessage());
-        }
-    }
-
-    public static void appendCheckInToCsv(String path, CheckIn c) {
-        try (PrintWriter pw = new PrintWriter(new FileWriter(path, true))) {
-            pw.println(c.toCsvRow());
-        } catch (IOException e) {
-            System.out.println("PT Bot> Could not append log: " + e.getMessage());
-        }
-    }
-
-    private static void printLastNEntries(String path, int n) {
-        File f = new File(path);
-        if (!f.exists()) {
-            System.out.println("PT Bot> No history yet. Run: checkin");
-            return;
-        }
-
-        List<String> lines = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-            String line;
-            while ((line = br.readLine()) != null) lines.add(line);
-        } catch (IOException e) {
-            System.out.println("PT Bot> Could not read history: " + e.getMessage());
-            return;
-        }
-
-        if (lines.size() <= 1) { // header only
-            System.out.println("PT Bot> No saved check-ins yet. Run: checkin");
-            return;
-        }
-
-        System.out.println("PT Bot> Last check-ins:");
-        int start = Math.max(1, lines.size() - n); // skip header at 0
-        for (int i = start; i < lines.size(); i++) {
-            System.out.println("  " + lines.get(i));
-        }
+        if (injuryChoice == 1) return "Hamstring rehab progression.";
+        if (injuryChoice == 2) return "Knee rehab progression.";
+        return "General rehab.";
     }
 
     // =========================
     // INPUT HELPERS
     // =========================
-    private static boolean askYesNo(Scanner scanner, String prompt) {
-        while (true) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim().toLowerCase();
-            if (input.equals("yes") || input.equals("y")) return true;
-            if (input.equals("no") || input.equals("n")) return false;
-            System.out.println("Please answer yes or no.");
-        }
+    private static boolean askYesNo(Scanner s, String q) {
+        System.out.print(q + " (y/n): ");
+        return s.nextLine().trim().toLowerCase().startsWith("y");
     }
 
-    private static int askIntRange(Scanner scanner, String prompt, int min, int max) {
+    private static int askInt(Scanner s, String q, int min, int max) {
         while (true) {
-            System.out.print(prompt);
+            System.out.print(q);
             try {
-                int value = Integer.parseInt(scanner.nextLine().trim());
-                if (value >= min && value <= max) return value;
-            } catch (NumberFormatException ignored) {}
-            System.out.println("Enter a number between " + min + " and " + max + ".");
+                int v = Integer.parseInt(s.nextLine());
+                if (v >= min && v <= max) return v;
+            } catch (Exception ignored) {}
         }
     }
 
-    private static double askDouble(Scanner scanner, String prompt) {
+    private static double askDouble(Scanner s, String q) {
         while (true) {
-            System.out.print(prompt);
+            System.out.print(q);
             try {
-                return Double.parseDouble(scanner.nextLine().trim());
-            } catch (NumberFormatException e) {
-                System.out.println("Enter a valid number (example: 7.5).");
-            }
+                return Double.parseDouble(s.nextLine());
+            } catch (Exception ignored) {}
         }
     }
 
-    private static String askString(Scanner scanner, String prompt) {
-        System.out.print(prompt);
-        return scanner.nextLine().trim();
+    private static LastResponse askLastResponse(Scanner s) {
+        System.out.print("Last session response (better/same/worse): ");
+        String r = s.nextLine().toLowerCase();
+        if (r.startsWith("b")) return LastResponse.BETTER;
+        if (r.startsWith("w")) return LastResponse.WORSE;
+        return LastResponse.SAME;
     }
 
     // =========================
-    // DATA CLASS
+    // DATA STRUCTURES
     // =========================
-    private static class CheckIn {
-        final String timestamp;
-        final int painAtRest;
-        final int stiffness;
-        final double sleepHours;
-        final boolean swelling;
-        final boolean instability;
-        final boolean sharpPain;
-        final boolean poppingWithPain;
-        final int overallPain;
-        final int strength;
-        final int flexibility;
-        final int fascia;
-        final int cns;
-        final String notes;
+    enum Decision { PROGRESS, HOLD, REGRESS }
+    enum LastResponse { BETTER, SAME, WORSE }
 
-        CheckIn(String timestamp,
-                int painAtRest, int stiffness, double sleepHours,
-                boolean swelling, boolean instability, boolean sharpPain, boolean poppingWithPain,
-                int overallPain,
-                int strength, int flexibility, int fascia, int cns,
-                String notes
-        ) {
-            this.timestamp = timestamp;
-            this.painAtRest = painAtRest;
-            this.stiffness = stiffness;
-            this.sleepHours = sleepHours;
-            this.swelling = swelling;
-            this.instability = instability;
-            this.sharpPain = sharpPain;
-            this.poppingWithPain = poppingWithPain;
-            this.overallPain = overallPain;
-            this.strength = strength;
-            this.flexibility = flexibility;
-            this.fascia = fascia;
-            this.cns = cns;
-            this.notes = notes == null ? "" : notes;
+    enum RTSPhase {
+        PHASE_1("Phase 1 – Symptoms & ROM"),
+        PHASE_2("Phase 2 – Base Strength"),
+        PHASE_3("Phase 3 – Movement"),
+        PHASE_4("Phase 4 – Practice"),
+        PHASE_5("Phase 5 – Return");
+
+        private final String label;
+        RTSPhase(String l) { label = l; }
+        String label() { return label; }
+    }
+
+    static class RTSState {
+        RTSPhase phase;
+        int step;
+
+        RTSState(RTSPhase p, int s) { phase = p; step = s; }
+
+        static RTSState load(String path) {
+            Properties p = new Properties();
+            try (FileInputStream f = new FileInputStream(path)) {
+                p.load(f);
+            } catch (Exception ignored) {}
+            int ph = Integer.parseInt(p.getProperty("phase", "1"));
+            int st = Integer.parseInt(p.getProperty("step", "1"));
+            return new RTSState(RTSPhase.values()[ph - 1], st);
         }
 
-        String toCsvRow() {
-            // Escape quotes + wrap notes in quotes to keep CSV safe
-            String safeNotes = notes.replace("\"", "\"\"");
-            return timestamp + ","
-                    + painAtRest + ","
-                    + stiffness + ","
-                    + sleepHours + ","
-                    + swelling + ","
-                    + instability + ","
-                    + sharpPain + ","
-                    + poppingWithPain + ","
-                    + overallPain + ","
-                    + strength + ","
-                    + flexibility + ","
-                    + fascia + ","
-                    + cns + ","
-                    + "\"" + safeNotes + "\"";
+        void save(String path) {
+            Properties p = new Properties();
+            p.setProperty("phase", String.valueOf(phase.ordinal() + 1));
+            p.setProperty("step", String.valueOf(step));
+            try (FileOutputStream f = new FileOutputStream(path)) {
+                p.store(f, "RTS state");
+            } catch (Exception ignored) {}
         }
+    }
+
+    static class Assessment {
+        String timestamp;
+        String zone;
+        Decision decision;
+        RTSPhase phase;
+        int step;
+
+        Assessment(String t, String z, Decision d, RTSPhase p, int s) {
+            timestamp = t;
+            zone = z;
+            decision = d;
+            phase = p;
+            step = s;
+        }
+    }
+
+    // =========================
+    // CSV LOGGING
+    // =========================
+    private static void ensureLogHeaderExists(String path) {
+        File f = new File(path);
+        if (f.exists()) return;
+        try (PrintWriter w = new PrintWriter(path)) {
+            w.println("timestamp,zone,decision,phase,step");
+        } catch (Exception ignored) {}
+    }
+
+    private static void appendAssessmentToCsv(String path, Assessment a) {
+        try (PrintWriter w = new PrintWriter(new FileWriter(path, true))) {
+            w.println(a.timestamp + "," + a.zone + "," + a.decision + "," +
+                      a.phase.label() + "," + a.step);
+        } catch (Exception ignored) {}
     }
 }
