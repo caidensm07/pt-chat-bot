@@ -1,3 +1,6 @@
+![CI](../../actions/workflows/ci.yml/badge.svg)
+
+
 # PT Chat Bot 🏃‍♂️🩺
 
 A Java-based Physical Therapy training plan generator that uses pain, recovery, and readiness signals to recommend safe daily training decisions.
