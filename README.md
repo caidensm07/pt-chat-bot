@@ -36,6 +36,19 @@ Each zone outputs a recommended daily training plan.
 
 ---
 
+## 💬 Chat Commands
+
+Once the program is running, use:
+
+- `help` — show commands
+- `checkin` — complete a daily check-in and save it
+- `plan` — show plan for the latest check-in
+- `history` — show the last 5 saved check-ins
+- `rehab hamstring` / `rehab knee` / `rehab calf` — show rehab plans
+- `quit` — exit
+
+---
+
 ## ▶️ Running the Program
 
 Compile and run the program from the command line:
