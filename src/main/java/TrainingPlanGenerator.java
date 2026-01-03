@@ -192,11 +192,14 @@ public class TrainingPlanGenerator {
     }
 
     private static LastResponse askLastResponse(Scanner s) {
-        System.out.print("Last session response (better/same/worse): ");
-        String r = s.nextLine().toLowerCase();
-        if (r.startsWith("b")) return LastResponse.BETTER;
-        if (r.startsWith("w")) return LastResponse.WORSE;
-        return LastResponse.SAME;
+    System.out.print("Last session response (if applicable — better / same / worse, default = same): ");
+    String r = s.nextLine().trim().toLowerCase();
+
+    if (r.startsWith("b")) return LastResponse.BETTER;
+    if (r.startsWith("w")) return LastResponse.WORSE;
+
+
+    return LastResponse.SAME;
     }
 
     // =========================
