@@ -1,7 +1,7 @@
 ![CI](../../actions/workflows/ci.yml/badge.svg)
 
 
-# PT Chat Bot 🏃‍♂️🩺
+# PT Chat Bot 
 
 A Java-based Physical Therapy training plan generator that uses pain, recovery, and readiness signals to recommend safe daily training decisions.
 
@@ -9,7 +9,7 @@ This project simulates how a PT or coach might adjust training based on injury s
 
 ---
 
-## 🚀 Features
+## Features
 
 - Injury-aware training logic
 - RED / YELLOW / GREEN readiness system
@@ -20,7 +20,7 @@ This project simulates how a PT or coach might adjust training based on injury s
 
 ---
 
-## 🧠 How It Works
+## How It Works
 
 The program prompts the user for:
 - Pain at rest and during activity
@@ -39,7 +39,7 @@ Each zone outputs a recommended daily training plan.
 
 ---
 
-## 💬 Chat Commands
+## Commands
 
 Once the program is running, use:
 
@@ -52,7 +52,7 @@ Once the program is running, use:
 
 ---
 
-## ▶️ Running the Program
+## Running the Program
 
 Compile and run the program from the command line:
 
@@ -60,7 +60,7 @@ Compile and run the program from the command line:
 javac TrainingPlanGenerator.java
 java TrainingPlanGenerator
 
-## 🔮 Future Improvements
+## Future Improvements
 
 Planned and potential enhancements for this project include:
 
@@ -75,7 +75,7 @@ Planned and potential enhancements for this project include:
 - Mobile-friendly UI
 - Data visualization for recovery and performance trends
 
-## 👤 Author
+## Author
 
 Built by Caiden Smith
 
