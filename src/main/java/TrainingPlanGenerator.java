@@ -74,6 +74,19 @@ public class TrainingPlanGenerator {
         boolean functionPass = askYesNo(sc, "Can you do a controlled single-leg squat to a chair? ");
         int confidence = askInt(sc, "Confidence moving today (0–10): ", 0, 10);
 
+System.out.println("Primary injury area (if applicable):");
+System.out.println("0 - None / Not applicable");
+System.out.println("1 - Hamstring");
+System.out.println("2 - Knee");
+System.out.println("3 - Ankle / Foot");
+System.out.println("4 - Hip / Groin");
+System.out.println("5 - Lower Back");
+System.out.println("6 - Upper Body");
+
+int injuryChoice = askInt(sc, "Select (0–6): ", 0, 6);
+InjuryType injury = InjuryType.values()[injuryChoice];
+System.out.println("Selected injury: " + injury);
+
         String zone = triageZone(
                 painRest, stiffness, sleep,
                 swelling, instability, sharpPain, false,
@@ -215,6 +228,16 @@ if (phase == RTSPhase.PHASE_1) {
     enum Decision { PROGRESS, HOLD, REGRESS }
     enum LastResponse { BETTER, SAME, WORSE }
 
+    enum InjuryType {
+    NONE,
+    HAMSTRING,
+    KNEE,
+    ANKLE_FOOT,
+    HIP_GROIN,
+    LOWER_BACK,
+    UPPER_BODY
+}
+
     enum RTSPhase {
         PHASE_1("Phase 1 – Symptoms & ROM"),
         PHASE_2("Phase 2 – Base Strength"),
@@ -225,6 +248,7 @@ if (phase == RTSPhase.PHASE_1) {
         private final String label;
         RTSPhase(String l) { label = l; }
         String label() { return label; }
+
     }
 
     static class RTSState {
